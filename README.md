@@ -6,6 +6,10 @@
 
 <p align="center"><img src="docs/screenshots/md-converter.png" alt="MD Converter screenshot" width="900"></p>
 
+**Download for Windows:** get the ready-to-run `.exe` from the [latest release](https://github.com/junqueirach/md-converter/releases/latest). No Python needed.
+
+> **Windows SmartScreen:** the file is not code-signed, so Windows may show "Windows protected your PC". Click **More info**, then **Run anyway**. You can also run the app from source (see Quick start) and read every line of the code first.
+
 ## Why it exists
 
 Good RAG answers start with good source text. PDFs are the hard part: layouts, tables, scans. No single converter wins on every document, so this app lets you try several and compare. Everything runs on your own computer, which matters when the documents are confidential.
