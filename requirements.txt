@@ -1,0 +1,19 @@
+# Main app environment. Heavy models install into their own isolated venvs at
+# runtime (Model Manager) and are NOT listed here - see MODEL_REGISTRY in md_converter.py.
+
+customtkinter==5.2.2
+tkinterdnd2==0.3.0
+
+# Light-model libraries (share the main environment)
+pymupdf4llm==1.28.0
+pymupdf==1.28.0
+pytesseract==0.3.13
+trafilatura==1.12.2
+markdownify==0.13.1
+html-to-markdown==1.4.0
+markitdown==0.0.1a4
+mammoth==1.8.0
+pypandoc==1.13
+pysrt==1.1.2
+webvtt-py==0.5.1
+Pillow==10.4.0
