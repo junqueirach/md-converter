@@ -10,6 +10,10 @@
 
 Good RAG answers start with good source text. PDFs are the hard part: layouts, tables, scans. No single converter wins on every document, so this app lets you try several and compare. Everything runs on your own computer, which matters when the documents are confidential.
 
+## How it works
+
+<p align="center"><img src="docs/screenshots/how-it-works.png" alt="How it works" width="900"></p>
+
 ## Highlights
 
 - **Light engines** (in-process): PyMuPDF4LLM, trafilatura, MarkItDown, Mammoth, markdownify, pysrt, webvtt-py, pytesseract, pypandoc
