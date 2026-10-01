@@ -31,13 +31,12 @@ Requires Python 3.11+ on Windows. See [docs/legacy-README.md](docs/legacy-README
 
 - About 5,400 lines of Python, single file with clearly marked sections (registry, advisor, installer, env manager, settings, runners, GUI)
 - More than 45 numbered versions in `archive/versions/`
-- `prompts/` has the original build specification given to Claude
 
 ---
 
 ## How this was built
 
-Built with **Claude (Anthropic)** as the coding partner. I wrote the requirements and the revision prompts, tested every build on real data, and decided what to fix next. The `archive/versions/` folder keeps every earlier release so the iteration history is visible, and `prompts/` shows the briefs I gave Claude. See [ai-assisted-development](https://github.com/junqueirach/ai-assisted-development) for the method.
+Built with **Claude (Anthropic)** as the coding partner. I wrote the requirements and the revision prompts, tested every build on real data, and decided what to fix next. The `archive/versions/` folder keeps every earlier release so the iteration history is visible.
 
 **Security note:** the app stores any API keys you enter in a local settings file outside this repository. `.gitignore` excludes config and settings files so keys are never committed.
 
