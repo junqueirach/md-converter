@@ -6,9 +6,9 @@
 
 <p align="center"><img src="docs/screenshots/md-converter.png" alt="MD Converter screenshot" width="900"></p>
 
-**Download for Windows:** get the ready-to-run `.exe` from the [latest release](https://github.com/junqueirach/md-converter/releases/latest). No Python needed.
+**Download for Windows:** get `MD-Converter-0.2.21-win64.zip` from the [latest release](https://github.com/junqueirach/md-converter/releases/latest) (about 135 MB). Unzip it, open the `MD Converter` folder and double-click `MD Converter.exe`. No Python needed. The SHA-256 checksum is in the release notes.
 
-> **Windows SmartScreen:** the file is not code-signed, so Windows may show "Windows protected your PC". Click **More info**, then **Run anyway**. You can also run the app from source (see Quick start) and read every line of the code first.
+> **Windows SmartScreen and antivirus:** the file is not code-signed, so Windows may show "Windows protected your PC". Click **More info**, then **Run anyway**. Antivirus software may also analyse a new unsigned program on its first start, which can make the window hang. If that happens, close it and start it again. You can also run the app from source (see Quick start) and read every line of the code first.
 
 ## Why it exists
 
@@ -32,15 +32,16 @@ Good RAG answers start with good source text. PDFs are the hard part: layouts, t
 ## Quick start
 
 ```
+pip install -r requirements.txt
 python md_converter.py
 ```
 
-Requires Python 3.11+ on Windows. See [docs/legacy-README.md](docs/legacy-README.md) for the long technical notes, including the install problems found on real machines and how each was fixed.
+Requires Python 3.11+ on Windows. The full manual is in [docs/USER-GUIDE.md](docs/USER-GUIDE.md) (supported formats, Base Folder layout, timeouts, building the `.exe`, troubleshooting, known issues). See [docs/legacy-README.md](docs/legacy-README.md) for older technical notes on install problems found on real machines.
 
 ## Project facts
 
-- About 5,400 lines of Python, single file with clearly marked sections (registry, advisor, installer, env manager, settings, runners, GUI)
-- More than 45 numbered versions in `archive/versions/`
+- Version 0.2.21, about 5,500 lines of Python, single file with clearly marked sections (registry, advisor, installer, env manager, settings, runners, GUI)
+- More than 50 numbered versions in `archive/versions/`
 
 ---
 
@@ -56,7 +57,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Bug repor
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT for the app's own code. See [LICENSE](LICENSE). The Windows `.exe` bundles PyMuPDF / PyMuPDF4LLM (AGPL-3.0) and pysrt (GPL-3.0); details in the [user guide](docs/USER-GUIDE.md#licensing-note).
 
 ## Author
 

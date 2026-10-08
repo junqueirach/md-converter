@@ -13,65 +13,6 @@ import os
 import re
 import subprocess
 import sys
-import threading
-
-# True when running as a PyInstaller-built .exe. There, sys.executable is the
-# .exe itself (not python.exe), so `sys.executable -m pip ...` or `-c ...` would
-# just launch another copy of the app. All base and Light-model packages are
-# bundled into the .exe at build time, so the pip-based paths below are skipped.
-IS_FROZEN = getattr(sys, "frozen", False)
-
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-_SPAWN_LOCK = threading.Lock()
-
-
-def _child_env() -> dict:
-    env = os.environ.copy()
-    if IS_FROZEN:
-        for key in list(env):
-            if key in ("TCL_LIBRARY", "TK_LIBRARY", "TKPATH", "_MEIPASS2") or key.startswith("_PYI"):
-                env.pop(key, None)
-    return env
-
-
-def _popen(args, **kw):
-    kw.setdefault("stdin", subprocess.DEVNULL)
-    if _NO_WINDOW:
-        kw.setdefault("creationflags", _NO_WINDOW)
-    if IS_FROZEN:
-        kw.setdefault("env", _child_env())
-    if not (IS_FROZEN and os.name == "nt"):
-        return subprocess.Popen(args, **kw)
-    import ctypes
-    kernel32 = ctypes.windll.kernel32
-    with _SPAWN_LOCK:
-        kernel32.SetDllDirectoryW(None)
-        try:
-            return subprocess.Popen(args, **kw)
-        finally:
-            kernel32.SetDllDirectoryW(getattr(sys, "_MEIPASS", None))
-
-
-def _run(args, *, input=None, capture_output=False, timeout=None, check=False, **kw):
-    if input is not None:
-        kw["stdin"] = subprocess.PIPE
-    if capture_output:
-        kw["stdout"] = subprocess.PIPE
-        kw["stderr"] = subprocess.PIPE
-    with _popen(args, **kw) as proc:
-        try:
-            stdout, stderr = proc.communicate(input, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
-            raise
-        except BaseException:
-            proc.kill()
-            raise
-        retcode = proc.poll()
-    if check and retcode:
-        raise subprocess.CalledProcessError(retcode, proc.args, output=stdout, stderr=stderr)
-    return subprocess.CompletedProcess(proc.args, retcode, stdout, stderr)
 
 # ===== BOOTSTRAP: auto-install the app's own base environment on first run =====
 #
@@ -104,18 +45,18 @@ _CORE_PACKAGES = [
     ("tkinterdnd2", "tkinterdnd2==0.6.2"),
 ]
 _OPTIONAL_PACKAGES = [
-    ("pymupdf4llm", "pymupdf4llm==1.28.2"),
-    ("pymupdf", "pymupdf==1.28.2"),
+    ("pymupdf4llm", "pymupdf4llm==1.28.0"),
+    ("pymupdf", "pymupdf==1.28.0"),
     ("pytesseract", "pytesseract==0.3.13"),
     ("trafilatura", "trafilatura==2.2.0"),
     ("markdownify", "markdownify==1.2.3"),
     ("html_to_markdown", "html-to-markdown==3.10.6"),
-    ("markitdown", "markitdown==0.1.7"),
-    ("mammoth", "mammoth==1.12.1"),
-    ("pypandoc", "pypandoc==1.17"),
+    ("markitdown", "markitdown==0.0.1a4"),
+    ("mammoth", "mammoth==1.8.0"),
+    ("pypandoc", "pypandoc==1.13"),
     ("pysrt", "pysrt==1.1.2"),
     ("webvtt", "webvtt-py==0.5.1"),
-    ("PIL", "Pillow==12.3.0"),
+    ("PIL", "Pillow==10.4.0"),
 ]
 
 
@@ -188,7 +129,7 @@ def _run_bootstrap_ui(missing_core: list, missing_optional: list) -> bool:
         for spec in to_install:
             events.put(f"Installing {spec} ...\n")
             try:
-                proc = _popen(
+                proc = subprocess.Popen(
                     [sys.executable, "-m", "pip", "install", spec],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
@@ -257,8 +198,6 @@ def _bootstrap_core_only() -> None:
     by test_md_converter.py or any tooling) block on a GUI/network operation -
     that check happens later, only when the app is actually launched (see
     APP ENTRY POINT)."""
-    if IS_FROZEN:
-        return  # bundled into the .exe; dist-info metadata may not be, so don't version-check
     missing_core = _missing_or_outdated(_CORE_PACKAGES)
     if not missing_core:
         return  # fast path: nothing to do, no network calls
@@ -291,8 +230,6 @@ def bootstrap_optional_packages_if_launching_app() -> None:
     """Called only from the `if __name__ == "__main__":` block - installs the
     Light-model libraries the Convert/Advisor tabs rely on, so a non-technical
     user never has to run `pip install` by hand. Never runs on a plain import."""
-    if IS_FROZEN:
-        return  # bundled into the .exe; there is no pip to install with
     missing_optional = _missing(_OPTIONAL_PACKAGES)
     if not missing_optional:
         return
@@ -350,7 +287,7 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 # ===== APP IDENTITY =====
 
 APP_NAME = "MD Converter"
-APP_VERSION = "0.2.21"
+APP_VERSION = "0.2.19"
 APP_AUTHOR = "Luiz Junqueira & Claude AI"
 APP_CONTACT = "junqueira.ch@gmail.com"
 
@@ -973,6 +910,7 @@ DEFAULT_SETTINGS = {
     "output_folder_mode": "same_as_source",  # or "custom"
     "custom_output_folder": "",
     "auto_open_after_conversion": False,
+    "log_verbosity": "Normal",
     "model_timeout_overrides": {},  # {model_key: seconds} - inactivity timeout override
     "model_max_runtime_overrides": {},  # {model_key: seconds} - absolute safety-cap override
     "model_timeout_enabled": {},  # {model_key: bool} - default True; False disables the inactivity limit
@@ -1260,7 +1198,7 @@ def _heavy_subprocess_env(model_key: str = "") -> dict:
       across every detected text line). All five batch-size knobs are now
       pinned to their absolute floor (1) - this trades meaningfully more
       wall-clock time for the lowest peak memory this pipeline supports."""
-    env = _child_env()
+    env = os.environ.copy()
     env["TORCHDYNAMO_DISABLE"] = "1"
     env["TORCH_COMPILE_DISABLE"] = "1"
     env["FLAGS_use_mkldnn"] = "0"
@@ -1630,7 +1568,7 @@ class Installer:
         candidates = []
         for cmd in (["py", "-3.12"], ["py", "-3.11"], ["py", "-3.13"], ["py", "-3.10"]):
             try:
-                result = _run(cmd + ["--version"], capture_output=True, timeout=5)
+                result = subprocess.run(cmd + ["--version"], capture_output=True, timeout=5)
                 if result.returncode == 0:
                     candidates.append(" ".join(cmd))
             except (OSError, subprocess.TimeoutExpired):
@@ -1646,11 +1584,10 @@ class Installer:
                 ):
                     if candidate_path and Path(candidate_path).exists():
                         candidates.append(candidate_path)
-        if not IS_FROZEN:  # a frozen sys.executable is the app .exe, not a Python
-            candidates.append(sys.executable)
+        candidates.append(sys.executable)
         for cmd in (["python"], ["python3"]):
             try:
-                result = _run(cmd + ["--version"], capture_output=True, timeout=5)
+                result = subprocess.run(cmd + ["--version"], capture_output=True, timeout=5)
                 if result.returncode == 0:
                     candidates.append(cmd[0])
             except (OSError, subprocess.TimeoutExpired):
@@ -1668,7 +1605,7 @@ class Installer:
         try:
             cmd = python_cmd.split(" ") + [
                 "-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')"]
-            result = _run(cmd, capture_output=True, timeout=10, text=True)
+            result = subprocess.run(cmd, capture_output=True, timeout=10, text=True)
             if result.returncode == 0:
                 major, minor = result.stdout.strip().split(".")
                 return (int(major), int(minor))
@@ -1803,7 +1740,7 @@ class Installer:
                 f"ForEach-Object {{ Write-Output $_.ProcessId; "
                 f"Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
             )
-            result = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
                                      capture_output=True, text=True, timeout=15)
             pids = [line.strip() for line in result.stdout.splitlines() if line.strip().isdigit()]
             if pids:
@@ -1857,7 +1794,7 @@ class Installer:
                 self._emit(model_key, "log", message="Install cancelled.")
                 return False
             try:
-                proc = _popen(
+                proc = subprocess.Popen(
                     cmd, cwd=str(cwd) if cwd else None,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, bufsize=1,
@@ -1910,7 +1847,7 @@ class Installer:
 
     def _kill_process_tree(self, pid: int, model_key: str = "") -> None:
         try:
-            result = _run(["taskkill", "/T", "/F", "/PID", str(pid)],
+            result = subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
                                      capture_output=True, text=True, timeout=10)
             if result.returncode != 0 and model_key:
                 # Not silently trusting this worked - a nonzero exit here (e.g.
@@ -1931,7 +1868,7 @@ class Installer:
         subprocess.TimeoutExpired on timeout, matching subprocess.run's
         behavior so callers can keep their existing except clauses."""
         import types
-        proc = _popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         with self._lock:
             self._active_procs[model_key] = proc
         deadline = time.time() + timeout
@@ -2027,15 +1964,6 @@ class Installer:
             self._cancel_flags[model_key] = False
 
     def _install_light(self, model: ModelDef) -> bool:
-        if IS_FROZEN:
-            # Light-model libraries are bundled into the .exe; pip can't add more.
-            if importlib.util.find_spec(_light_import_name(model.key)) is not None:
-                self._emit(model.key, "log", message="Bundled with this .exe - nothing to install.")
-                return True
-            self._emit(model.key, "error",
-                       message="This library isn't bundled with this .exe build and can't be "
-                               "installed into it. Run the .py version to install it.")
-            return False
         py = sys.executable
         self._emit(model.key, "log", message="Step 1 of 2: upgrading pip/setuptools/wheel.")
         if not self._run_streamed(model.key, [py, "-m", "pip", "install", "--upgrade",
@@ -2227,7 +2155,7 @@ class Installer:
         """Best-effort check via tasklist. Returns True (keep waiting) if the
         check itself fails - safer than wrongly assuming the process is gone."""
         try:
-            result = _run(
+            result = subprocess.run(
                 ["tasklist", "/FI", f"IMAGENAME eq {image_name}"],
                 capture_output=True, text=True, timeout=10)
             return image_name.lower() in result.stdout.lower()
@@ -2254,7 +2182,7 @@ class Installer:
         while time.time() < deadline:
             if self._cancel_flags.get(model_key):
                 try:
-                    _run(["taskkill", "/T", "/F", "/IM", installer_path.name],
+                    subprocess.run(["taskkill", "/T", "/F", "/IM", installer_path.name],
                                    capture_output=True, timeout=10)
                 except (OSError, subprocess.TimeoutExpired):
                     pass
@@ -2484,7 +2412,7 @@ class Installer:
                                     "even after a second attempt (or a UAC prompt may have "
                                     "been declined). Cleaning up any leftover installer process...")
                 try:
-                    _run(["taskkill", "/T", "/F", "/IM", installer_path.name],
+                    subprocess.run(["taskkill", "/T", "/F", "/IM", installer_path.name],
                                    capture_output=True, timeout=10)
                 except (OSError, subprocess.TimeoutExpired):
                     pass
@@ -2517,7 +2445,7 @@ class Installer:
         if self._cancel_flags.get(model_key):
             self._emit(model_key, "log", message="Install cancelled.")
             return False
-        return _resolve_pandoc_exe(self.env) is not None
+        return self.env.pandoc_exe().exists() or shutil.which("pandoc") is not None
 
     # ---------- python runtime auto-provisioning ----------
 
@@ -2641,7 +2569,7 @@ class Installer:
             # registration to it.
             self._emit(key, "log", message="Clearing any leftover registration from a previous attempt...")
             try:
-                _run(
+                subprocess.run(
                     [str(installer_path), "/uninstall", "/quiet", "/log", str(uninstall_log_path),
                      f"TargetDir={target_dir}"],
                     capture_output=True, timeout=120)
@@ -2733,7 +2661,7 @@ class Installer:
             if ok:
                 self._emit(key, "log", message="Verifying the installation...")
                 try:
-                    verify = _run([str(self.env.python_runtime_exe()), "--version"],
+                    verify = subprocess.run([str(self.env.python_runtime_exe()), "--version"],
                                              capture_output=True, timeout=15)
                     ok = verify.returncode == 0
                     if not ok:
@@ -2867,37 +2795,17 @@ class Installer:
     def _smoke_test(self, model: ModelDef) -> tuple:
         try:
             if model.special_case == "tesseract_binary":
-                exe_path = _resolve_tesseract_exe(self.env)
-                if not exe_path:
+                exe = self.env.tesseract_exe()
+                if not exe.exists():
                     return False, "tesseract.exe not found."
-                sample_png = Path(os.environ.get("TEMP", ".")) / f"mdconv_tess_{uuid.uuid4().hex[:8]}.png"
-                try:
-                    _write_minimal_png(sample_png)
-                    result = _run([exe_path, str(sample_png), "stdout"], capture_output=True, timeout=60)
-                finally:
-                    try:
-                        sample_png.unlink()
-                    except OSError:
-                        pass
+                result = subprocess.run([str(exe), "--version"], capture_output=True, timeout=15)
                 return result.returncode == 0, result.stderr.decode(errors="ignore")
 
             if model.special_case == "pandoc_binary":
-                exe_path = _resolve_pandoc_exe(self.env)
-                if not exe_path:
-                    return False, "pandoc.exe not found."
-                result = _run([exe_path, "-f", "html", "-t", "gfm-raw_html", "--wrap=none"],
-                                         input="<p>smoketest</p>", capture_output=True,
-                                         text=True, encoding="utf-8", timeout=30)
-                ok = result.returncode == 0 and "smoketest" in result.stdout
-                return ok, result.stderr or f"pandoc exited with code {result.returncode}"
-
-            if model.weight == Weight.LIGHT and IS_FROZEN:
-                import_name = _light_import_name(model.key)
-                try:
-                    importlib.import_module(import_name)
-                    return True, ""
-                except Exception as e:
-                    return False, f"{type(e).__name__}: {e}"
+                exe = self.env.pandoc_exe()
+                exe_path = str(exe) if exe.exists() else "pandoc"
+                result = subprocess.run([exe_path, "--version"], capture_output=True, timeout=15)
+                return result.returncode == 0, result.stderr.decode(errors="ignore")
 
             if model.weight == Weight.LIGHT:
                 py = sys.executable
@@ -2914,7 +2822,7 @@ class Installer:
                 # Subsequent imports are fast once Defender has cached the
                 # verdict. 120s comfortably absorbs that one-time cost for
                 # any light model with native DLLs, not just this one.
-                result = _run([py, "-c", f"import {import_name}"],
+                result = subprocess.run([py, "-c", f"import {import_name}"],
                                          capture_output=True, timeout=120)
                 return result.returncode == 0, result.stderr.decode(errors="ignore")
 
@@ -3098,7 +3006,7 @@ def convert_file(model_key: str, env: EnvManager, source: Path, output_md: Path,
     try:
         if model.weight == Weight.LIGHT:
             logger.write("Running in-process (Light model).")
-            _convert_light(model_key, env, source, output_md)
+            _convert_light(model_key, source, output_md)
         else:
             _convert_heavy(model_key, env, source, output_md,
                             inactivity_timeout_seconds, max_runtime_seconds, cancel_flag,
@@ -3150,25 +3058,7 @@ class _ConversionLogger:
                 self._fh = None
 
 
-def _resolve_pandoc_exe(env: EnvManager) -> Optional[str]:
-    exe = env.pandoc_exe()
-    if exe.exists():
-        return str(exe)
-    if exe.parent.exists():
-        nested = next(exe.parent.rglob("pandoc.exe"), None)
-        if nested:
-            return str(nested)
-    return shutil.which("pandoc")
-
-
-def _resolve_tesseract_exe(env: EnvManager) -> Optional[str]:
-    exe = env.tesseract_exe()
-    if exe.exists():
-        return str(exe)
-    return shutil.which("tesseract")
-
-
-def _convert_light(model_key: str, env: EnvManager, source: Path, output_md: Path) -> None:
+def _convert_light(model_key: str, source: Path, output_md: Path) -> None:
     ext = source.suffix.lower()
     try:
         if model_key == "pymupdf4llm":
@@ -3179,21 +3069,16 @@ def _convert_light(model_key: str, env: EnvManager, source: Path, output_md: Pat
         elif model_key == "tesseract":
             import pytesseract
             from PIL import Image
-            tesseract_exe = _resolve_tesseract_exe(env)
-            if not tesseract_exe:
-                raise ConversionError("Tesseract binary not found. Use Repair/Reinstall in Model Manager.")
-            pytesseract.pytesseract.tesseract_cmd = tesseract_exe
             if ext == ".pdf":
                 import pymupdf
                 doc = pymupdf.open(str(source))
                 texts = []
-                try:
-                    for page in doc:
-                        pix = page.get_pixmap(dpi=300, alpha=False)
-                        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-                        texts.append(pytesseract.image_to_string(img))
-                finally:
-                    doc.close()
+                for page in doc:
+                    pix = page.get_pixmap()
+                    img_path = output_md.with_suffix(f".page{page.number}.png")
+                    pix.save(str(img_path))
+                    texts.append(pytesseract.image_to_string(Image.open(img_path)))
+                    img_path.unlink(missing_ok=True)
                 output_md.write_text("\n\n".join(texts), encoding="utf-8")
             else:
                 text = pytesseract.image_to_string(Image.open(source))
@@ -3234,15 +3119,8 @@ def _convert_light(model_key: str, env: EnvManager, source: Path, output_md: Pat
             output_md.write_text(result.value, encoding="utf-8")
 
         elif model_key == "pandoc":
-            pandoc_exe = _resolve_pandoc_exe(env)
-            if not pandoc_exe:
-                raise ConversionError("Pandoc binary not found. Use Repair/Reinstall in Model Manager.")
-            result = _run(
-                [pandoc_exe, str(source), "-t", "gfm-raw_html", "--wrap=none", "-o", str(output_md)],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0)
-            if result.returncode != 0:
-                raise ConversionError(result.stderr.strip() or f"pandoc exited with code {result.returncode}")
+            import pypandoc
+            pypandoc.convert_file(str(source), "markdown", outputfile=str(output_md))
 
         elif model_key == "subtitles":
             _convert_subtitles(source, output_md)
@@ -3281,7 +3159,7 @@ def _convert_heavy(model_key: str, env: EnvManager, source: Path, output_md: Pat
     runner = env.model_runner_script(model_key)
     if not venv_python.exists() or not runner.exists():
         raise ConversionError(f"{model_key} is not installed correctly. Reinstall from Model Manager.")
-    proc = _popen(
+    proc = subprocess.Popen(
         [str(venv_python), str(runner), str(source), str(output_md)],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
@@ -3431,9 +3309,18 @@ def _convert_heavy(model_key: str, env: EnvManager, source: Path, output_md: Pat
 
 def _kill_pid_tree(pid: int) -> None:
     try:
-        _run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=10)
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         pass
+
+
+ASSET_PRODUCING_MODELS = {"docling", "marker", "mineru", "unstructured"}
+
+
+def output_paths_for(source: Path, out_dir: Path) -> tuple:
+    md_path = out_dir / f"{source.stem}.md"
+    assets_dir = out_dir / f"{source.stem}_assets"
+    return md_path, assets_dir
 
 
 # ===== GUI: SHARED HELPERS =====
@@ -3563,6 +3450,8 @@ class ConvertTab(ctk.CTkScrollableFrame):
         self.file_entries: list = []  # one per added file: source, ext, variant, variant_mode
         self.selected_models: dict = {}  # ext -> set(model_key) - checkbox state, shared across files of that ext
         self.queue_rows: list = []  # one per (file, model): row_id, source, model_key, status, error, ...
+        self._cleared_keys: set = set()  # (source_str, model_key) explicitly removed via Clean Queue -
+                                          # suppressed from _rebuild_queue_rows until re-ticked or a new batch starts
 
         self._conversion_active = False
         self._cancel_requested = threading.Event()
@@ -3709,30 +3598,26 @@ class ConvertTab(ctk.CTkScrollableFrame):
             variant = Advisor.detect_pdf_variant(path) if ext == ".pdf" else ""
             self.file_entries.append({"source": path, "ext": ext, "variant": variant, "variant_mode": "auto"})
             added_any = True
+            # A fresh add (even re-adding a file removed earlier via Clean Queue)
+            # is a new, deliberate request - don't let a stale suppression from
+            # an earlier clear silently keep its row from appearing this time.
+            self._cleared_keys = {k for k in self._cleared_keys if k[0] != str(path)}
             if ext not in self.selected_models:
-                self.selected_models[ext] = self._default_selection(ext, variant)
+                remembered = self.app.settings.get_last_used_models_multi(ext)
+                ranked = Advisor.rank_models(ext, variant)
+                default_key = remembered[0] if remembered else (ranked[0][0].key if ranked else None)
+                self.selected_models[ext] = {default_key} if default_key else set()
         if added_any:
             self._refresh_file_info_panel()
             self._refresh_model_panel()
             self._rebuild_queue_rows()
 
-    def _default_selection(self, ext: str, variant: str) -> set:
-        ranked = Advisor.rank_models(ext, variant)
-        if not ranked:
-            return set()
-        good_fit = {m.key for m, fit, _ in ranked if fit in (FitRating.BEST, FitRating.GOOD)}
-        remembered = [k for k in self.app.settings.get_last_used_models_multi(ext) if k in good_fit]
-        return set(remembered) if remembered else {ranked[0][0].key}
-
     def _apply_variant_mode(self, ext: str, mode: str) -> None:
-        first_variant = ""
         for entry in self.file_entries:
             if entry["ext"] != ext:
                 continue
             entry["variant_mode"] = mode
             entry["variant"] = Advisor.detect_pdf_variant(entry["source"]) if mode == "auto" else mode
-            first_variant = first_variant or entry["variant"]
-        self.selected_models[ext] = self._default_selection(ext, first_variant)
         self._refresh_file_info_panel()
         self._refresh_model_panel()
         self._rebuild_queue_rows()
@@ -3802,6 +3687,11 @@ class ConvertTab(ctk.CTkScrollableFrame):
         selected = self.selected_models.setdefault(ext, set())
         if checked:
             selected.add(model_key)
+            # A checkbox tick is a deliberate, fresh request for this combo -
+            # let it back in even if it was removed by a previous Clean Queue.
+            for entry in self.file_entries:
+                if entry["ext"] == ext:
+                    self._cleared_keys.discard((str(entry["source"]), model_key))
         else:
             selected.discard(model_key)
         self.app.settings.set_last_used_models_multi(ext, list(selected))
@@ -3841,6 +3731,8 @@ class ConvertTab(ctk.CTkScrollableFrame):
         for key in expected_order:
             if key in existing_by_key:
                 new_rows.append(existing_by_key[key])
+            elif key in self._cleared_keys:
+                continue  # explicitly removed via Clean Queue - stays gone until re-ticked
             else:
                 src_str, model_key = key
                 source = next(e["source"] for e in self.file_entries if str(e["source"]) == src_str)
@@ -3988,18 +3880,12 @@ class ConvertTab(ctk.CTkScrollableFrame):
     def _clean_queue(self) -> None:
         if self._conversion_active:
             return
-        self.file_entries = []
-        self.selected_models = {}
+        self._cleared_keys |= {(row["source_str"], row["model_key"]) for row in self.queue_rows}
         self.queue_rows = []
         self._batch_done_count = 0
         self._batch_total_count = 0
-        self._refresh_file_info_panel()
-        self._refresh_model_panel()
         self._refresh_queue_panel()
         self._set_progress(0.0)
-        self.elapsed_label.configure(text="Elapsed: -")
-        self.eta_label.configure(text="Estimated remaining: -")
-        self.log_box.delete("1.0", "end")
         self._update_convert_button_state()
 
     def _conversion_worker(self, collision_policy: dict) -> None:
@@ -4033,8 +3919,9 @@ class ConvertTab(ctk.CTkScrollableFrame):
 
             try:
                 out_dir = self.app.settings.output_folder_for(source)
-                model_display = re.sub(r'[<>:"/\\|?*]', "_", MODEL_REGISTRY[model_key].display_name)
+                model_display = MODEL_REGISTRY[model_key].display_name
                 md_path = out_dir / f"{source.stem} ({model_display}).md"
+                _, assets_dir = output_paths_for(source, out_dir)
                 md_path = self._resolve_collision(md_path, collision_policy)
                 if md_path is None:
                     row["status"] = "skipped"
@@ -4052,6 +3939,8 @@ class ConvertTab(ctk.CTkScrollableFrame):
                 convert_file(model_key, self.app.env, source, md_path,
                              inactivity_timeout_s, max_runtime_s, self._cancel_requested.is_set,
                              log_path=log_path, on_output=on_output)
+                if model_key in ASSET_PRODUCING_MODELS:
+                    assets_dir.mkdir(parents=True, exist_ok=True)
                 row["status"] = "done"
                 row["output_path"] = str(md_path)
                 elapsed = time.time() - self._current_row_start
@@ -4289,7 +4178,7 @@ class AdvisorTab(ctk.CTkFrame):
     def _use_model(self, model: ModelDef, ext: str) -> None:
         status = self.app.settings.get_cached_status(model.key)
         if status != InstallStatus.INSTALLED.value:
-            self.app.goto_model_manager()
+            self.app.goto_model_manager(highlight=model.key)
             return
         self.app.goto_convert_with_model(ext, model.key)
 
@@ -4958,6 +4847,11 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkEntry(base_row, textvariable=self.base_folder_var, width=300).pack(side="left")
         ctk.CTkButton(base_row, text="Browse", width=70, command=self._browse_base_folder).pack(side="left", padx=6)
 
+        ctk.CTkLabel(outer, text="Log verbosity", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=16, pady=(16, 0))
+        self.log_verbosity_var = ctk.StringVar(value=settings.get("log_verbosity", "Normal"))
+        ctk.CTkOptionMenu(outer, values=["Normal", "Verbose"],
+                         variable=self.log_verbosity_var).pack(anchor="w", padx=24)
+
         ctk.CTkLabel(outer, text="Conversion Logs", font=ctk.CTkFont(weight="bold")).pack(
             anchor="w", padx=16, pady=(16, 0))
         ctk.CTkLabel(outer, text="Every conversion attempt writes a full log here, findable by "
@@ -5104,6 +4998,7 @@ class SettingsWindow(ctk.CTkToplevel):
         s.set("appearance_mode", self.appearance_var.get())
         ctk.set_appearance_mode(self.appearance_var.get())
         s.set("auto_open_after_conversion", self.auto_open_var.get())
+        s.set("log_verbosity", self.log_verbosity_var.get())
         for model_key, var in self.timeout_vars.items():
             try:
                 s.set_timeout_override(model_key, int(var.get()))
@@ -5212,6 +5107,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.about_tab: Optional[AboutTab] = None
 
         self._rotate_logs()
+        self._session_log_path = self.env.logs_dir() / f"session_{datetime.now():%Y%m%d_%H%M%S}.log"
 
         if not self.settings.get("onboarding_complete", False):
             self.withdraw()
@@ -5350,9 +5246,9 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         if model.weight == Weight.HEAVY:
             return self.env.model_python(model.key).exists() and self.env.model_runner_script(model.key).exists()
         if model.special_case == "tesseract_binary":
-            return _resolve_tesseract_exe(self.env) is not None
+            return self.env.tesseract_exe().exists() or shutil.which("tesseract") is not None
         if model.special_case == "pandoc_binary":
-            return _resolve_pandoc_exe(self.env) is not None
+            return self.env.pandoc_exe().exists() or shutil.which("pandoc") is not None
         # Plain Light package: these install into the main app's own Python
         # environment, not the Base Folder, so check for the real import there -
         # this is independent of which Base Folder is currently selected.
@@ -5433,7 +5329,7 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
 
     # ---- navigation helpers ----
 
-    def goto_model_manager(self) -> None:
+    def goto_model_manager(self, highlight: Optional[str] = None) -> None:
         if self.tabview:
             self.tabview.set("Model Manager")
 
@@ -5490,23 +5386,17 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
     # ---- misc ----
 
     def _rotate_logs(self) -> None:
-        self._rotate_log_folder(self.env.logs_dir(), "session_*.log")
-        self._rotate_log_folder(self.env.conversion_logs_dir(), "*.log")
-
-    @staticmethod
-    def _rotate_log_folder(folder: Path, pattern: str, max_count: int = 20,
-                           max_bytes: int = 100 * 1024 * 1024) -> None:
-        if not folder.exists():
+        logs_dir = self.env.logs_dir()
+        if not logs_dir.exists():
             return
-        try:
-            logs = sorted(folder.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-            total_size = sum(p.stat().st_size for p in logs)
-        except OSError:
-            return
-        while logs and (len(logs) > max_count or total_size > max_bytes):
+        logs = sorted(logs_dir.glob("session_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        total_size = sum(p.stat().st_size for p in logs)
+        max_count = 20
+        max_bytes = 100 * 1024 * 1024
+        while len(logs) > max_count or total_size > max_bytes:
             victim = logs.pop()
+            total_size -= victim.stat().st_size
             try:
-                total_size -= victim.stat().st_size
                 victim.unlink()
             except OSError:
                 pass

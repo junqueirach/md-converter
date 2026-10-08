@@ -1,19 +1,20 @@
-# Main app environment. Heavy models install into their own isolated venvs at
-# runtime (Model Manager) and are NOT listed here - see MODEL_REGISTRY in md_converter.py.
+# Main app environment for MD Converter v0.2.21.
+# Heavy models (Docling, Unstructured, marker, MinerU, PaddleOCR, Surya) install into
+# their own isolated venvs from the Model Manager and are NOT listed here.
+# Pins match _CORE_PACKAGES / _OPTIONAL_PACKAGES / MODEL_REGISTRY in the app.
 
 customtkinter==5.2.2
-tkinterdnd2==0.3.0
+tkinterdnd2==0.6.2
 
-# Light-model libraries (share the main environment)
-pymupdf4llm==1.28.0
-pymupdf==1.28.0
+pymupdf4llm==1.28.2
+pymupdf==1.28.2
 pytesseract==0.3.13
-trafilatura==1.12.2
-markdownify==0.13.1
-html-to-markdown==1.4.0
-markitdown==0.0.1a4
-mammoth==1.8.0
-pypandoc==1.13
+trafilatura==2.2.0
+markdownify==1.2.3
+html-to-markdown==3.10.6
+markitdown[pptx,xlsx]==0.1.7
+mammoth==1.12.1
+pypandoc==1.17
 pysrt==1.1.2
 webvtt-py==0.5.1
-Pillow==10.4.0
+Pillow==12.3.0
