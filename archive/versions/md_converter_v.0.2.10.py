@@ -220,7 +220,7 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 APP_NAME = "MD Converter"
 APP_VERSION = "0.2.10"
 APP_AUTHOR = "Luiz Junqueira & Claude AI"
-APP_CONTACT = "USEReira.ch@gmail.com"
+APP_CONTACT = "junqueira.ch@gmail.com"
 
 PYTHON_MIN_VERSION = (3, 11)
 
