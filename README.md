@@ -41,7 +41,7 @@ Requires Python 3.11+ on Windows. The full manual is in [docs/USER-GUIDE.md](doc
 ## Project facts
 
 - Version 0.2.21, about 5,500 lines of Python, single file with clearly marked sections (registry, advisor, installer, env manager, settings, runners, GUI)
-- More than 50 numbered versions in `archive/versions/`
+- About 50 numbered versions in `archive/versions/`
 
 ---
 
